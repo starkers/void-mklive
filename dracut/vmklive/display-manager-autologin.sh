@@ -10,7 +10,8 @@ USERNAME=$(getarg live.user)
 # Configure GDM autologin
 if [ -d ${NEWROOT}/etc/gdm ]; then
     GDMCustomFile=${NEWROOT}/etc/gdm/custom.conf
-    AutologinParameters="AutomaticLoginEnable=true\nAutomaticLogin=$USERNAME"
+# FIXME.. not working so disabling
+#   AutologinParameters="AutomaticLoginEnable=true\nAutomaticLogin=$USERNAME"
 
     # Prevent from updating if parameters already present (persistent usb key)
     if ! `grep -qs 'AutomaticLoginEnable' $GDMCustomFile` ; then

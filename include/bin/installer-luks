@@ -41,7 +41,7 @@ LV[var]="5G"
 LV[home]="512M"
 
 
-try xbps-install -Suy xbps xbps-repo-nonfree
+try xbps-install -Suy xbps void-repo-nonfree
 try xbps-install -S
 declare -a DEPS=(
   exfat-utils

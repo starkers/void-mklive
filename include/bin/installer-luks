@@ -44,8 +44,12 @@ LV[home]="512M"
 try xbps-install -Suy xbps void-repo-nonfree
 try xbps-install -S
 declare -a DEPS=(
+  cryptsetup
+  parted
+  lvm2
   exfat-utils
   fzf
+  parted
 )
 for pkg in ${DEPS[@]} ; do
   xbps-install -Sy ${pkg}
@@ -174,11 +178,11 @@ try mkdir -p /mnt/var/db/xbps/keys/
 try cp -a /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
 
 # try xbps-install -y -c /xbps-cachedir-x86_64 -S -R ${REPO} -r /mnt $PKG_LIST
-  try ${XBPS_INSTALL_CMD} $PKG_LIST
+try chroot ${XBPS_INSTALL_CMD} -r /mnt $PKG_LIST
 
 # Do a bit of customization
 echo "[!] Setting root password"
-try passwd -R /mnt root
+try chroot passwd root
 echo $HOSTNAME > /mnt/etc/hostname
 echo "TIMEZONE=${TIMEZONE}" >> /mnt/etc/rc.conf
 echo "KEYMAP=${KEYMAP}" >> /mnt/etc/rc.conf

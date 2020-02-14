@@ -3,28 +3,30 @@
 ARCH=
 IMAGE=
 
-while getopts "a:b:hr:" opt; do
+while getopts "a:b:o:hr:" opt; do
 case $opt in
 	a) ARCH="$OPTARG";;
 	b) IMAGE="$OPTARG";;
-	h) echo "${0#/*}: [-a arch] [-b base|e|xfce|mate|cinnamon|gnome|kde|lxde|lxqt] [-r repo]" >&2; exit 1;;
+  o) OUTDIR="$OPTARG";;
+	h) echo "${0#/*}: [-a arch] [-b base|e|xfce|mate|cinnamon|gnome|kde|lxde|lxqt] [-r repo] [-o outdir]" >&2; exit 1;;
 	r) REPO="-r $OPTARG $REPO";;
 esac
 done
 shift $((OPTIND - 1))
 
 : ${ARCH:=$(uname -m)}
+: ${OUTDIR:=${OUTDIR:-.}}    # default output path will become ./ unless "-o /foo" is used
 
 readonly DATE=$(date +%Y%m%d)
-readonly BASE_IMG=void-live-${ARCH}-${DATE}.iso
-readonly E_IMG=void-live-${ARCH}-${DATE}-enlightenment.iso
-readonly XFCE_IMG=void-live-${ARCH}-${DATE}-xfce.iso
-readonly MATE_IMG=void-live-${ARCH}-${DATE}-mate.iso
-readonly CINNAMON_IMG=void-live-${ARCH}-${DATE}-cinnamon.iso
-readonly GNOME_IMG=void-live-${ARCH}-${DATE}-gnome.iso
-readonly KDE_IMG=void-live-${ARCH}-${DATE}-kde.iso
-readonly LXDE_IMG=void-live-${ARCH}-${DATE}-lxde.iso
-readonly LXQT_IMG=void-live-${ARCH}-${DATE}-lxqt.iso
+readonly BASE_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}.iso
+readonly E_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-enlightenment.iso
+readonly XFCE_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-xfce.iso
+readonly MATE_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-mate.iso
+readonly CINNAMON_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-cinnamon.iso
+readonly GNOME_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-gnome.iso
+readonly KDE_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-kde.iso
+readonly LXDE_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-lxde.iso
+readonly LXQT_IMG=${OUTDIR}/void-live-${ARCH}-${DATE}-lxqt.iso
 
 readonly GRUB="grub-i386-efi grub-x86_64-efi"
 

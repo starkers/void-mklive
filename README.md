@@ -63,6 +63,16 @@ The "builder" image will download and save those into a cached repo `/cache`
 You can then build inside docker by mapping `./out/` dir to `/out` inside the container..
 
 ```
-docker build -t builder . -f Dockerfile.builder
-docker run --privileged=true -v `pwd -P`/out:/out -it builder ./mklive.sh -r /cache -a x86_64 -o /out/void-live-x86_64-20200214.iso -p dialog cryptsetup lvm2 mdadm grub-i386-efi grub-x86_64-efi
+# This will --download-only packages.base into /cache and prepare a "builder" docker image
+# NOTE the "--build-arg base="  this is used to download packages into /cache
+#      .. ensure that the package.<foo> lines up with `-b <foo>` in the final step
+docker build -t builder . -f Dockerfile.builder --build-arg base=packages.base
+```
+
+
+```
+# use the builder to create an ISO into ./out/.
+# it won't download much (hopefully).. rather it'll use /cache as the repo
+
+docker run --privileged=true -v `pwd -P`/out:/out -it builder ./build-x86-images.sh -a x86_64 -r /cache -b base -o /out
 ```

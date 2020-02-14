@@ -36,18 +36,47 @@ RUN xbps-reconfigure -a && \
 
 CMD ["/bin/sh"]
 
+###############
 FROM stage2 as builder
-WORKDIR /work
-RUN xbps-install -Syu && xbps-install -Sy bash git make lzo e2fsprogs syslinux os-prober fuse grub libefivar grub-i386-efi grub-x86_64-efi squashfs-tools xorriso popt
+ARG REPOSITORY=https://alpha.de.repo.voidlinux.org
+ENV ARCH=x86_64
+ENV XBPS_ARCH=$ARCH
 
-COPY packages.base .
-ENV PACKAGES=packages.base
-RUN xbps-install -Syu && \
-      xbps-install -S \
+WORKDIR /work
+RUN xbps-install -Syu && xbps-install -Sy \
+      bash \
+      e2fsprogs \
+      fuse \
+      git \
+      grub \
+      grub-i386-efi \
+      grub-x86_64-efi \
+      libefivar \
+      lzo \
+      make\
+      os-prober \
+      popt \
+      squashfs-tools \
+      syslinux \
+      xorriso
+
+
+## optionally build-arg to switch package.X
+ARG base=packages.base
+ENV PACKAGES=${base}
+COPY $PACKAGES .
+
+# we're gonna need this for intel-ucode (generally)
+RUN xbps-install -Syu void-repo-nonfree
+
+RUN xbps-install -Sy \
       $(grep -h '^[^#].' ${PACKAGES}) \
-      --download-only -y \
+      --download-only \
       -c /cache
+
+# index the downloaded files as a local repo
 RUN find /cache/ -type f -name "*.xbps" -exec xbps-rindex -a {} +
 
+# Generate the install scripts
 COPY . .
 RUN make clean && make

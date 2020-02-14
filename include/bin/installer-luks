@@ -182,7 +182,7 @@ try ${XBPS_INSTALL_CMD} -r /mnt $PKG_LIST
 
 # Do a bit of customization
 echo "[!] Setting root password"
-try chroot passwd root
+try passwd -R /mnt root
 echo $HOSTNAME > /mnt/etc/hostname
 echo "TIMEZONE=${TIMEZONE}" >> /mnt/etc/rc.conf
 echo "KEYMAP=${KEYMAP}" >> /mnt/etc/rc.conf
@@ -313,12 +313,12 @@ declare -a services_disable=(
 )
 
 
-## NOTE: NULL LiveCD
 # cp -R /cachedir-x86_64 /mnt/.
 # echo 'repository=/xbps-cachedir-x86_64' > /mnt/etc/xbps.d/my-local-repo.conf
 
 #TODO do this smarter.. "
-try printf "nameserver 8.8.4.4\nnameserver 1.1.1.1\n" > /mnt/etc/resolv.conf
+# try printf "nameserver 8.8.4.4\nnameserver 1.1.1.1\n" > /mnt/etc/resolv.conf
+try cp /etc/resolv.conf /mnt/etc/resolv.conf
 
 ## TODO: make this conditional (if internet connection == True)
 # try chroot /mnt xbps-install -Syu

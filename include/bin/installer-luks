@@ -244,7 +244,7 @@ try cat /mnt/etc/default/grub
 try chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
 try chroot /mnt xbps-reconfigure -f ${KERNEL_VER}
 
-try cp /usr/bin/xb /mnt/usr/bin/xb
+# try cp /usr/bin/xb /mnt/usr/bin/xb
 # try cp /usr/share/bash-completion/completions/xb /mnt/usr/share/bash-completion/completions/xb
 
 

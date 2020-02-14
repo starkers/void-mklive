@@ -52,3 +52,17 @@ These scripts are in flux, if you want to build a duplicate of a
 production image, its not a bad idea to ping maldridge on IRC.  This
 message will be removed when this readme is replaced with complete
 documentation.
+
+
+
+# Building in docker
+
+assemble package.base with the packages to be installed.. (See: `build-x86-images.sh.in`)
+The "builder" image will download and save those into a cached repo `/cache`
+
+You can then build inside docker by mapping `./out/` dir to `/out` inside the container..
+
+```
+docker build -t builder . -f Dockerfile.builder
+docker run --privileged=true -v `pwd -P`/out:/out -it builder ./mklive.sh -r /cache -a x86_64 -o /out/void-live-x86_64-20200214.iso -p dialog cryptsetup lvm2 mdadm grub-i386-efi grub-x86_64-efi
+```

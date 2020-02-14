@@ -214,10 +214,11 @@ generate_grub_efi_boot() {
 
     # Create EFI vfat image.
     truncate -s 32M "$GRUB_DIR"/efiboot.img >/dev/null 2>&1
-    mkfs.vfat -F12 -S 512 -n "grub_uefi" "$GRUB_DIR/efiboot.img" >/dev/null 2>&1
+    mkfs.vfat -F12 -S 512 -n "grub_uefi" "$GRUB_DIR/efiboot.img" || die "Error mkfs.vfat"
 
     GRUB_EFI_TMPDIR="$(mktemp --tmpdir="$HOME" -d)"
     LOOP_DEVICE="$(losetup --show --find "${GRUB_DIR}"/efiboot.img)"
+    sync ; sleep 1
     mount -o rw,flush -t vfat "${LOOP_DEVICE}" "${GRUB_EFI_TMPDIR}" >/dev/null 2>&1
 
     cp -a "$IMAGEDIR"/boot "$VOIDHOSTDIR"
@@ -255,13 +256,17 @@ generate_squashfs() {
     # Find out required size for the rootfs and create an ext3fs image off it.
     ROOTFS_SIZE=$(du -sm "$ROOTFS"|awk '{print $1}')
     mkdir -p "$BUILDDIR/tmp/LiveOS"
+    LOFS1_IMG=$BUILDDIR/tmp/LiveOS/ext3fs.img
     truncate -s "$((ROOTFS_SIZE+ROOTFS_SIZE/6))M" \
-	    "$BUILDDIR"/tmp/LiveOS/ext3fs.img >/dev/null 2>&1
+	    "$LOFS1_IMG" >/dev/null 2>&1
     mkdir -p "$BUILDDIR/tmp-rootfs"
-    mkfs.ext3 -F -m1 "$BUILDDIR/tmp/LiveOS/ext3fs.img" >/dev/null 2>&1
-    mount -o loop "$BUILDDIR/tmp/LiveOS/ext3fs.img" "$BUILDDIR/tmp-rootfs"
+    LOFS1_DEV=$(losetup --show --find $LOFS1_IMG)
+    sync ; sleep 1
+    mkfs.ext3 -F -m1 "$LOFS1_DEV" || die "Error formatting $LOFS1_DEV"
+    mount -o loop "$LOFS1_DEV" "$BUILDDIR/tmp-rootfs" || die "Error mounting dev"
     cp -a "$ROOTFS"/* "$BUILDDIR"/tmp-rootfs/
     umount -f "$BUILDDIR/tmp-rootfs"
+    losetup -d "$LOFS1_DEV"
     mkdir -p "$IMAGEDIR/LiveOS"
 
     "$VOIDHOSTDIR"/usr/bin/mksquashfs "$BUILDDIR/tmp" "$IMAGEDIR/LiveOS/squashfs.img" \

@@ -41,7 +41,7 @@ COMPRESSOR_THREADS=2
 all: $(SCRIPTS)
 
 clean:
-	rm -v *.sh
+	-rm -v *.sh
 
 distdir-$(DATECODE):
 	mkdir -p distdir-$(DATECODE)

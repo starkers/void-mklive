@@ -2,3 +2,4 @@ xbps-cachedir-*/
 *.iso
 *.img*
 *.tar*
+out/

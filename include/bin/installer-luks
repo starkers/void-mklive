@@ -1,0 +1,353 @@
+#!/bin/bash
+
+#
+#  wget https://git.deltashim.com/open/void/raw/master/install.sh -O install.sh ; bash ./install.sh
+#
+
+set -e
+
+# TODOS:
+#
+# ensure free ram > 1Gb or else luksFormat will OOM
+# test on NVME
+# simple pick your HDD dialog..
+# create a user
+
+
+yell() { echo "$0: $*" >&2; }
+die() { echo -e "\e[31m--- $*\e[0m"; exit 1; }
+try() { echo -e "\e[32m==> $@\e[0m"; $@ || die "cannot $*"; }
+
+
+export REPO=https://alpha.de.repo.voidlinux.org/current
+export XBPS_INSTALL_CMD="xbps-install -y -S"
+
+export FZF_DEFAULT_OPTS="--layout=reverse --inline-info"
+
+declare -A LV
+
+PKG_LIST="base-system lvm2 cryptsetup grub"
+HOSTNAME="localhost"
+KEYMAP="en_US"
+TIMEZONE="UTC"
+LANG="en_US.UTF-8"
+DEVNAME="$1"
+VGNAME="vg0"
+CRYPTSETUP_OPTS=""
+SWAP=0
+SWAPSIZE="2G"
+LV[root]="10G"
+LV[var]="5G"
+LV[home]="512M"
+
+
+try xbps-install -S
+try xbps-install -Suy xbps
+try xbps-install -y fzf
+
+DEVNAME="$(lsblk | grep disk | awk '{print $1}'| egrep -v "fd0" | fzf)"
+# Detect if we're in UEFI or legacy mode
+if [ -d /sys/firmware/efi ]; then
+  export UEFI=1
+  PKG_LIST="$PKG_LIST grub-x86_64-efi efibootmgr"
+fi
+
+# Detect if we're on an Intel system
+# TODO: is this needed?
+CPU_VENDOR=$(grep vendor_id /proc/cpuinfo | awk '{print $3}')
+if grep -q "GenuineIntel" <<<"${CPU_VENDOR}" ;  then
+  PKG_LIST="$PKG_LIST linux-firmware-intel"
+fi
+if grep -q "AuthenticAMD" <<<"${CPU_VENDOR}" ;  then
+  PKG_LIST="$PKG_LIST linux-firmware-amd"
+fi
+
+# Install requirements
+# xbps-install -y -S -f cryptsetup parted lvm2
+
+#partitions on NVME will have a slightly different looking name
+if grep -q nvme <<<"${DEVNAME}"; then
+  NVME=1
+fi
+
+# Wipe /dev/${DEVNAME}
+try dd if=/dev/zero of=/dev/${DEVNAME} bs=1M count=100
+if [ $UEFI ]; then
+  try parted /dev/${DEVNAME} mklabel gpt
+  try parted -a optimal /dev/${DEVNAME} mkpart primary 2048s 100M
+  try parted -a optimal /dev/${DEVNAME} mkpart primary 100M 612M
+  try parted -a optimal /dev/${DEVNAME} mkpart primary 612M 100%
+else
+  try parted /dev/${DEVNAME} mklabel msdos
+  try parted -a optimal /dev/${DEVNAME} mkpart primary 2048s 512M
+  try parted -a optimal /dev/${DEVNAME} mkpart primary 512M 100%
+fi
+
+parted /dev/${DEVNAME} set 1 boot on
+
+# Encrypt partitions
+if [ $UEFI ]; then
+  if [ $NVME ]; then
+    EFIPART="p1"
+    BOOTPART="p2"
+    DEVPART="p3"
+  else
+    EFIPART="1"
+    BOOTPART="2"
+    DEVPART="3"
+  fi
+  try mkfs.vfat /dev/${DEVNAME}${EFIPART}
+  try mkfs.vfat /dev/${DEVNAME}${DEVPART}
+  try mkfs.ext4 -m 0 -L boot /dev/${DEVNAME}${BOOTPART}
+else
+  if [ $NVME ]; then
+    BOOTPART="p1"
+    DEVPART="p2"
+  else
+    BOOTPART="1"
+    DEVPART="2"
+  fi
+  try mkfs.vfat /dev/${DEVNAME}${DEVPART}
+  try mkfs.ext4 -m 0 -L boot /dev/${DEVNAME}${BOOTPART}
+fi
+
+# echo "[!] Encrypt boot partition"
+# try cryptsetup ${CRYPTSETUP_OPTS} luksFormat --batch-mode -c aes-xts-plain64 -s 512 /dev/${DEVNAME}${BOOTPART}
+# echo "[!] Open boot partition"
+# try cryptsetup luksOpen /dev/${DEVNAME}${BOOTPART} crypt-boot
+
+echo "[!] Encrypt root partition"
+try cryptsetup ${CRYPTSETUP_OPTS} luksFormat --batch-mode -c aes-xts-plain64 -s 512 /dev/${DEVNAME}${DEVPART}
+echo "[!] Open root partition"
+try cryptsetup luksOpen /dev/${DEVNAME}${DEVPART} crypt-pool
+
+# Now create VG
+try pvcreate /dev/mapper/crypt-pool
+try vgcreate ${VGNAME} /dev/mapper/crypt-pool
+for FS in ${!LV[@]}; do
+  try lvcreate -L ${LV[$FS]} -n ${FS/\//_} ${VGNAME}
+done
+if [ $SWAP -eq 1 ]; then
+  try lvcreate -L ${SWAPSIZE} -n swap ${VGNAME}
+fi
+
+
+for FS in ${!LV[@]}; do
+  try mkfs.ext4 -m 0 -L ${FS/\//_} /dev/mapper/${VGNAME}-${FS/\//_}
+done
+if [ $SWAP -eq 1 ]; then
+  try mkswap -L swap /dev/mapper/${VGNAME}-swap
+fi
+
+
+# Mount them
+try mount /dev/mapper/${VGNAME}-root /mnt
+for dir in dev proc sys boot; do
+  try mkdir /mnt/${dir}
+done
+
+## Remove root and sort keys
+unset LV[root]
+for FS in $(for key in "${!LV[@]}"; do printf '%s\n' "$key"; done| sort); do
+  try mkdir -p /mnt/${FS}
+  try mount /dev/mapper/${VGNAME}-${FS/\//_} /mnt/${FS}
+done
+
+try mount /dev/${DEVNAME}${BOOTPART} /mnt/boot
+if [ $UEFI ]; then
+  try mkdir /mnt/boot/efi
+  try mount /dev/${DEVNAME}${EFIPART} /mnt/boot/efi
+fi
+
+for fs in dev proc sys; do
+  try mount -o bind /${fs} /mnt/${fs}
+done
+
+# Now install void
+try mkdir -p /mnt/var/db/xbps/keys/
+try cp -a /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
+
+# try xbps-install -y -c /xbps-cachedir-x86_64 -S -R ${REPO} -r /mnt $PKG_LIST
+  try ${XBPS_INSTALL_CMD} $PKG_LIST
+
+# Do a bit of customization
+echo "[!] Setting root password"
+try passwd -R /mnt root
+echo $HOSTNAME > /mnt/etc/hostname
+echo "TIMEZONE=${TIMEZONE}" >> /mnt/etc/rc.conf
+echo "KEYMAP=${KEYMAP}" >> /mnt/etc/rc.conf
+echo "TTYS=2" >> /mnt/etc/rc.conf
+
+echo "LANG=$LANG" > /mnt/etc/locale.conf
+echo "$LANG $(echo ${LANG} | cut -f 2 -d .)" >> /mnt/etc/default/libc-locales
+try chroot /mnt xbps-reconfigure -f glibc-locales
+
+UUID_BOOT="$(lsblk -o NAME,UUID | grep ${DEVNAME}${BOOTPART} | awk '{print $2}')"
+UUID_LUKS_DATA="$(lsblk -o NAME,UUID | grep ${DEVNAME}${DEVPART} | awk '{print $2}')"
+
+try echo UUID_BOOT=$UUID_BOOT
+try echo UUID_LUKS_DATA=$UUID_LUKS_DATA
+
+# Add fstab entries
+echo "LABEL=root  /       ext4    rw,relatime,data=ordered,discard    0 0" > /mnt/etc/fstab
+echo "UUID=${UUID_BOOT}    /boot   ext4    rw,relatime,data=ordered,discard    0 0" >> /mnt/etc/fstab
+for FS in $(for key in "${!LV[@]}"; do printf '%s\n' "$key"; done| sort); do
+  echo "LABEL=${FS/\//_}  /${FS}	ext4    rw,relatime,data=ordered,discard    0 0" >> /mnt/etc/fstab
+done
+echo "tmpfs       /tmp    tmpfs   size=1G,noexec,nodev,nosuid     0 0" >> /mnt/etc/fstab
+
+if [ $UEFI ]; then
+  echo "/dev/${DEVNAME}${EFIPART}   /boot/efi   vfat    defaults    0 0" >> /mnt/etc/fstab
+fi
+
+if [ $SWAP -eq 1 ]; then
+  echo "LABEL=swap  none       swap     defaults    0 0" >> /mnt/etc/fstab
+fi
+
+# Install grub
+cat << EOF >> /mnt/etc/default/grub
+GRUB_TERMINAL_INPUT="console"
+GRUB_TERMINAL_OUTPUT="console"
+GRUB_ENABLE_CRYPTODISK=y
+EOF
+try sed -i 's+#GRUB_BACKGROUND+GRUB_BACKGROUND+g' /mnt/etc/default/grub
+if [ $UEFI ]; then
+  #TODO: try always fails on this for some reason...
+  chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id='Void Linux'
+else
+  try chroot /mnt grub-install /dev/${DEVNAME}
+fi
+
+# Now tune the cryptsetup
+KERNEL_VER=$(xbps-query -r /mnt -s linux5 | cut -f 2 -d ' ' | cut -f 1 -d -)
+
+if [ $UEFI ]; then
+  echo "GRUB_CMDLINE_LINUX=\"rd.vconsole.keymap=${KEYMAP} rd.lvm=1 rd.luks=1 rd.luks.allow-discards rd.luks.uuid=${UUID_LUKS_DATA} loglevel=4 slub_debug=P page_poison=1 rd.auto=1\"" >> /mnt/etc/default/grub
+  echo "hostonly=yes" > /mnt/etc/dracut.conf.d/hostonly.conf
+  echo "add_dracutmodules+=\"resume\"" >> /mnt/etc/dracut.conf.d/resume.conf
+else
+  echo "GRUB_CMDLINE_LINUX=\"rd.vconsole.keymap=${KEYMAP} rd.lvm=1 rd.luks=1 rd.luks.allow-discards rd.luks.uuid=${UUID_LUKS_DATA} loglevel=4 slub_debug=P page_poison=1\"" >> /mnt/etc/default/grub
+fi
+try lsblk -o NAME,UUID
+try cat /mnt/etc/default/grub
+
+try chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+try chroot /mnt xbps-reconfigure -f ${KERNEL_VER}
+
+try cp /usr/bin/xb /mnt/usr/bin/xb
+# try cp /usr/share/bash-completion/completions/xb /mnt/usr/share/bash-completion/completions/xb
+
+
+createUser(){
+  yell "creating a user"
+  read -p "pick a username: " user
+  read -p "pick a password: " userpass
+
+  local usershell="/bin/bash"
+  echo "Creating user account: ${user} : ${usershell}"
+
+  try chroot /mnt groupadd -g 1000 ${user}
+  try chroot /mnt useradd \
+    -M -s "${usershell}" \
+    -d "/home/${user}" \
+    -c "initial-user" \
+    -u 1000 \
+    -g 1000 \
+    -G "wheel,users,audio,video,input,cdrom,bluetooth" \
+    "${user}"
+  try mkdir /mnt/home/${user}
+  chroot /mnt echo "${user}:${userpass}" |  try chroot /mnt chpasswd -c SHA512
+  try chroot /mnt chown -R "${user}:${user}" "/home/${user}"
+  echo "%wheel	ALL=(ALL)	NOPASSWD: ALL" >> /mnt/etc/sudoers
+}
+
+declare -a PACKAGES=(
+  alsa-plugins-pulseaudio
+  cryptsetup
+  dejavu-fonts-ttf
+  dialog
+  firefox-esr
+  font-misc-misc
+  gnome
+  gnome-terminal
+  grub-i386-efi
+  grub-x86_64-efi
+  intel-ucode
+  lvm2
+  mdadm
+  setxkbmap
+  terminus-font
+  xauth
+  xorg-input-drivers
+  xorg-minimal
+  xorg-video-drivers
+)
+
+#TODO: enable all servics dynamically like the liveCD instead
+declare -a services_enable=(
+  NetworkManager
+  acpid
+  bluetoothd
+  dbus
+  elogind
+  gdm
+  polkitd
+  rtkit
+  sshd
+  udevd
+  uuid
+)
+
+declare -a services_disable=(
+  dhcpcd
+)
+
+
+## NOTE: NULL LiveCD
+# cp -R /cachedir-x86_64 /mnt/.
+# echo 'repository=/xbps-cachedir-x86_64' > /mnt/etc/xbps.d/my-local-repo.conf
+
+#TODO do this smarter.. "
+try printf "nameserver 8.8.4.4\nnameserver 1.1.1.1\n" > /mnt/etc/resolv.conf
+
+## TODO: make this conditional (if internet connection == True)
+# try chroot /mnt xbps-install -Syu
+
+for pkg in ${PACKAGES[@]} ; do
+  yell "Installing package: ${pkg}"
+  # TODO don't use cache if we have internet
+  # try chroot /mnt xbps-install -y -c /xbps-cachedir-x86_64 ${pkg}
+  try chroot /mnt ${XBPS_INSTALL_CMD} ${pkg}
+done
+# try rm -rf /mnt/tmp/pkg-cache/* /mnt/etc/xbps.d/my-local-repo.conf /mnt/xbps-cachedir-x86_64
+
+set +e
+for svc in ${services_enable[@]}; do
+  # if [ ! -e "${MNT}/etc/sv/${svc}" ] ; then continue ; fi
+  ln -sf /etc/sv/${svc} /mnt/etc/runit/runsvdir/default/
+  # chroot /mnt ln -s /etc/sv/${svc} /var/service/${svc}/
+done
+set -e
+
+set +e
+for svc in ${services_disable[@]}; do
+  rm /mnt/etc/runit/runsvdir/default/${svc}
+done
+set -e
+
+set -x
+createUser
+
+# # Now add customization to installation
+# yell "custom scripts"
+# if [ -d ./custom ]; then
+#   cp -r ./custom /mnt/tmp
+
+#   # If we detect any .sh let's run them in the chroot
+#   for SHFILE in /mnt/tmp/custom/*.sh; do
+#     try chroot /mnt sh /tmp/custom/$(basename $SHFILE)
+#   done
+
+#   # Then cleanup chroot
+#   rm -rf /mnt/tmp/custom
+# fi

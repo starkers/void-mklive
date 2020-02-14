@@ -41,9 +41,15 @@ LV[var]="5G"
 LV[home]="512M"
 
 
+try xbps-install -Suy xbps xbps-repo-nonfree
 try xbps-install -S
-try xbps-install -Suy xbps
-try xbps-install -y fzf
+declare -a DEPS=(
+  exfat-utils
+  fzf
+)
+for pkg in ${DEPS[@]} ; do
+  xbps-install -Sy ${pkg}
+done
 
 DEVNAME="$(lsblk | grep disk | awk '{print $1}'| egrep -v "fd0" | fzf)"
 # Detect if we're in UEFI or legacy mode

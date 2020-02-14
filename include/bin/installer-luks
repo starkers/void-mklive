@@ -20,7 +20,7 @@ try() { echo -e "\e[32m==> $@\e[0m"; $@ || die "cannot $*"; }
 
 
 export REPO=https://alpha.de.repo.voidlinux.org/current
-export XBPS_INSTALL_CMD="xbps-install -y -S"
+export XBPS_INSTALL_CMD="xbps-install -y -S -R $REPO"
 
 export FZF_DEFAULT_OPTS="--layout=reverse --inline-info"
 
@@ -178,7 +178,7 @@ try mkdir -p /mnt/var/db/xbps/keys/
 try cp -a /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
 
 # try xbps-install -y -c /xbps-cachedir-x86_64 -S -R ${REPO} -r /mnt $PKG_LIST
-try chroot ${XBPS_INSTALL_CMD} -r /mnt $PKG_LIST
+try ${XBPS_INSTALL_CMD} -r /mnt $PKG_LIST
 
 # Do a bit of customization
 echo "[!] Setting root password"

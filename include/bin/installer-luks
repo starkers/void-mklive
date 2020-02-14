@@ -321,8 +321,7 @@ declare -a services_disable=(
 try cp /etc/resolv.conf /mnt/etc/resolv.conf
 
 ## TODO: make this conditional (if internet connection == True)
-# try chroot /mnt xbps-install -Syu
-
+try chroot /mnt ${XBPS_INSTALL_CMD} void-repo-nonfree
 for pkg in ${PACKAGES[@]} ; do
   yell "Installing package: ${pkg}"
   # TODO don't use cache if we have internet

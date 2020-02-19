@@ -276,7 +276,7 @@ declare -a PACKAGES=(
   cryptsetup
   dejavu-fonts-ttf
   dialog
-  firefox-esr
+  firefox
   font-misc-misc
   gnome
   gnome-terminal

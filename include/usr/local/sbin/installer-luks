@@ -22,7 +22,7 @@ try() { echo -e "\e[32m==> $@\e[0m"; $@ || die "cannot $*"; }
 export REPO=https://alpha.de.repo.voidlinux.org/current
 export XBPS_INSTALL_CMD="xbps-install -y -S -R $REPO"
 
-export FZF_DEFAULT_OPTS="--layout=reverse --inline-info"
+export FZF_DEFAULT_OPTS="--height=20% --no-sort --tac"
 
 declare -A LV
 
@@ -51,11 +51,30 @@ declare -a DEPS=(
   fzf
   parted
 )
+
+
+function install_if_not(){
+  yell "checking for ${1}"
+  set +e
+  # if the query fails .. install it
+  xbps-query -S ${1} 2>&1>/dev/null || xbps-install -Sy ${1}
+  set -e
+}
+
 for pkg in ${DEPS[@]} ; do
-  xbps-install -Sy ${pkg}
+  install_if_not ${pkg}
 done
 
-DEVNAME="$(lsblk | grep disk | awk '{print $1}'| egrep -v "fd0" | fzf)"
+
+echo "
+################################################################################
+## please select a target drive to install onto..
+##
+## WARNING: all data on the disk will be lost
+################################################################################
+"
+
+DEVNAME="$(lsblk | grep disk | awk '{print $1}'| egrep -v "fd0" | fzf --preview 'cat /sys/class/block/{}/device/model')"
 # Detect if we're in UEFI or legacy mode
 if [ -d /sys/firmware/efi ]; then
   export UEFI=1
@@ -312,12 +331,10 @@ declare -a services_disable=(
   dhcpcd
 )
 
-
 # cp -R /cachedir-x86_64 /mnt/.
 # echo 'repository=/xbps-cachedir-x86_64' > /mnt/etc/xbps.d/my-local-repo.conf
 
 #TODO do this smarter.. "
-# try printf "nameserver 8.8.4.4\nnameserver 1.1.1.1\n" > /mnt/etc/resolv.conf
 try cp /etc/resolv.conf /mnt/etc/resolv.conf
 
 ## TODO: make this conditional (if internet connection == True)
@@ -332,9 +349,7 @@ done
 
 set +e
 for svc in ${services_enable[@]}; do
-  # if [ ! -e "${MNT}/etc/sv/${svc}" ] ; then continue ; fi
   ln -sf /etc/sv/${svc} /mnt/etc/runit/runsvdir/default/
-  # chroot /mnt ln -s /etc/sv/${svc} /var/service/${svc}/
 done
 set -e
 
@@ -344,19 +359,4 @@ for svc in ${services_disable[@]}; do
 done
 set -e
 
-set -x
 createUser
-
-# # Now add customization to installation
-# yell "custom scripts"
-# if [ -d ./custom ]; then
-#   cp -r ./custom /mnt/tmp
-
-#   # If we detect any .sh let's run them in the chroot
-#   for SHFILE in /mnt/tmp/custom/*.sh; do
-#     try chroot /mnt sh /tmp/custom/$(basename $SHFILE)
-#   done
-
-#   # Then cleanup chroot
-#   rm -rf /mnt/tmp/custom
-# fi

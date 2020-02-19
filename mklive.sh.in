@@ -409,10 +409,15 @@ mkdir -p "$ROOTFS"/etc
 print_step "Installing void pkgs into the rootfs: ${PACKAGE_LIST} ..."
 install_packages
 
+echo "##################################################"
+echo "checking for INCLUDE_DIRECTORY"
 if [ -n "${INCLUDE_DIRECTORY}" ];then
     print_step "Copying directory structure into the rootfs: ${INCLUDE_DIRECTORY} ..."
     copy_include_directory
+else
+    echo INCLUDE_DIRECTORY not set
 fi
+echo "##################################################"
 
 print_step "Generating initramfs image ($INITRAMFS_COMPRESSION)..."
 generate_initramfs
